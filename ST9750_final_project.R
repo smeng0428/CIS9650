@@ -69,15 +69,15 @@ PM2.5_NY_2020 %>%  select(Date, `Daily Mean PM2.5 Concentration`, COUNTY) %>%
   filter(COUNTY %in% NYC_counties) %>% 
   ggplot(aes(x = Date, y= `Daily Mean PM2.5 Concentration`, color = COUNTY))+geom_point(alpha=0.3)+
   geom_vline(mapping = aes(xintercept = date(NY_pause))) +geom_smooth(se=FALSE)+
-  geom_text(aes(x = date(NY_pause), y = 20, label = "NY PAUSE executive order"), size = 4, hjust=-0.05)+
+  geom_text(aes(x = date(NY_pause), y = 20, label = "NY PAUSE executive order"), size = 3, hjust=-0.05, color = "black")+
   labs(title = "Daily PM 2.5 concetration in NYC in 2020", x = "", y="Daily Mean PM2.5 concentration (ug/m3 LC)")
 
 # seasonal change? long term trend?
 PM2.5_NY_2004to2020_cleaned %>% select(Date, `Daily Mean PM2.5 Concentration`, COUNTY) %>%  
   filter(COUNTY %in% NYC_counties) %>% 
   ggplot(aes(x = Date, y= `Daily Mean PM2.5 Concentration`, color = COUNTY))+geom_point(alpha=0.03)+
-  geom_vline(mapping = aes(xintercept = date(NY_pause))) +geom_smooth(se=FALSE, size =0.8, aes(color = "All"))+
-  geom_text(aes(x = date(NY_pause), y = 40, label = "NY PAUSE executive order", color ="All"), size = 4, hjust=1)+
+  geom_vline(mapping = aes(xintercept = date(NY_pause))) +geom_smooth(se=FALSE, size =0.8)+
+  geom_text(aes(x = date(NY_pause), y = 40, label = "NY PAUSE executive order"), size = 3, hjust=1, color="black")+
   labs(title = "long term trend of Daily PM 2.5 concetration in NYC", x = "", y="Daily Mean PM2.5 concentration (ug/m3 LC)")
 
 
