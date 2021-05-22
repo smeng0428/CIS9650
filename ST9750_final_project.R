@@ -4,6 +4,7 @@ library(lubridate)
 library(modelr)
 library(broom)
 library(randomForest)
+library(forecast)
 ##step 1, read in data
 ## since we are focusing on PM2.5 and NO2 from 2004 to 2020. there will be 34 csv file to be read in
 ## the following function will read data to a data frame.
@@ -82,6 +83,14 @@ PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration, COUNTY) %>%
   geom_vline(mapping = aes(xintercept = date(NY_pause))) +geom_smooth(se=FALSE, size =0.8)+
   geom_text(aes(x = date(NY_pause), y = 40, label = "NY PAUSE executive order"), size = 3, hjust=1, color="black")+
   labs(title = "long term trend of Daily PM 2.5 concetration in NYC", x = "", y="Daily Mean PM2.5 concentration (ug/m3 LC)")
+
+PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration, COUNTY) %>%  
+  filter(COUNTY %in% NYC_counties) %>% 
+  group_by(year(Date),COUNTY) %>%  
+  summarise(PM2.5_mean =mean(PM2.5_concentration), sd=sd(PM2.5_concentration)) %>% 
+  rename (Year = `year(Date)`) %>% 
+
+
 #boxplot to explore potential seasonality
 PM2.5_NYC <- PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration, COUNTY, site_ID, month, POC) %>%  
   filter(COUNTY %in% NYC_counties, POC==1) %>% 
@@ -127,14 +136,14 @@ PM2.5_NYC_rf <- PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration
 train = sample(1:nrow(PM2.5_NYC_rf), nrow(PM2.5_NYC_rf)*.7)
 
 PM2.5_rf_mdl <- randomForest(PM2.5_concentration~Date+COUNTY+site_ID+year+month+day, data = PM2.5_NYC_rf, subset = train, ntree=500)
-PM2.5_rf_mdl2 <- randomForest(PM2.5_concentration~Date+COUNTY+site_ID+year+month+weekday+weekend, data = PM2.5_NYC_rf, subset = train, ntree=500)
+
 PM2.5_NYC_rf$pred <- predict(PM2.5_rf_mdl, PM2.5_NYC_rf)
 rf_train_rmse <- sqrt(mean((PM2.5_NYC_rf$pred-PM2.5_NYC_rf$PM2.5_concentration)^2))
-rf2_train_rmse <- sqrt(mean((predict(PM2.5_rf_mdl2, PM2.5_NYC_rf)-PM2.5_NYC_rf$PM2.5_concentration)^2))
+mse(PM2.5_rf_mdl, PM2.5_NYC_rf) %>% sqrt()
 importance(PM2.5_rf_mdl)
-importance(PM2.5_rf_mdl2)
+
 varImpPlot(PM2.5_rf_mdl)
-varImpPlot(PM2.5_rf_mdl2)
+
 
 PM2.5_NYC_rf_test <- PM2.5_NYC_rf[-train,"PM2.5_concentration"]#testing set for data validation
 PM2.5_NYC_rf_test$rf_yhat <- predict(PM2.5_rf_mdl, newdata = PM2.5_NYC_rf[-train,])
@@ -142,29 +151,50 @@ PM2.5_NYC_rf_test %>% ggplot(aes(x=rf_yhat, y=PM2.5_concentration))+
   geom_point()+geom_abline()
 rf_test_rmse <- sqrt(mean((PM2.5_NYC_rf_test$rf_yhat-PM2.5_NYC_rf_test$PM2.5_concentration)^2))
 
+PM2.5_rf_mdl2 <- randomForest(PM2.5_concentration~Date+COUNTY+site_ID+year+month+weekday+weekend, data = PM2.5_NYC_rf, subset = train, importance =TRUE, ntree=500)
+rf2_train_rmse <- sqrt(mean((predict(PM2.5_rf_mdl2, PM2.5_NYC_rf)-PM2.5_NYC_rf$PM2.5_concentration)^2))
+
+importance(PM2.5_rf_mdl2)
+varImpPlot(PM2.5_rf_mdl2)
+
 PM2.5_NYC_rf_test2 <- PM2.5_NYC_rf[-train,"PM2.5_concentration"]#testing set for data validation
 PM2.5_NYC_rf_test2$rf_yhat <- predict(PM2.5_rf_mdl2, newdata = PM2.5_NYC_rf[-train,])
 PM2.5_NYC_rf_test2 %>% ggplot(aes(x=rf_yhat, y=PM2.5_concentration))+
   geom_point()+geom_abline()
 rf_rmse2 <- sqrt(mean((PM2.5_NYC_rf_test2$rf_yhat-PM2.5_NYC_rf_test2$PM2.5_concentration)^2))
+
+
 ## model 2 lm or ts
 #trying with lm first
 #same as PM2.5_NYC_rf, rename for easy understanding
 PM2.5_NYC_lm <- PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration, COUNTY, site_ID, POC) %>%  
   filter(COUNTY %in% NYC_counties) %>% 
-  mutate(COUNTY=as.factor(COUNTY),year=as.factor(year(Date)),month=as.factor(month(Date)),day=as.factor(day(Date)), weekday=weekdays(Date),weekend=if_else(weekday %in% c("Saturday","Sunday"), TRUE, FALSE)) %>% 
-  filter(POC==1)
-PM2.5_lm_mdl <- lm(PM2.5_concentration~Date, data = PM2.5_NYC_lm, subset = train)
+  mutate(COUNTY=as.factor(COUNTY),year=year(Date),month=as.factor(month(Date))) %>% 
+  filter(POC==1) %>% filter(year>=2013 & year <2020) %>% mutate(sqrt_PM2.5_concentration = sqrt(PM2.5_concentration))
+PM2.5_lm_mdl <- lm(sqrt_PM2.5_concentration~Date+I(month)+year+I(COUNTY), data = PM2.5_NYC_lm)
+
 PM2.5_NYC_lm$pred <-predict(PM2.5_lm_mdl, PM2.5_NYC_lm)
-lm_train_rmse <- sqrt(mean((PM2.5_NYC_lm$pred-PM2.5_NYC_lm$PM2.5_concentration)^2))
-augment(PM2.5_lm_mdl)
+lm_train_rmse <- sqrt(mean(((PM2.5_NYC_lm$pred)^2-PM2.5_NYC_lm$PM2.5_concentration)^2))
+augment(PM2.5_lm_mdl) %>% arrange(desc(.hat)) %>% View()
 summary(PM2.5_lm_mdl)
+tidy(PM2.5_lm_mdl)
+
+
+PM2.5_NYC_2020 <- PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration, COUNTY, site_ID, POC) %>%  
+  filter(COUNTY %in% NYC_counties) %>% 
+  mutate(COUNTY=as.factor(COUNTY),year=year(Date),month=as.factor(month(Date))) %>% 
+  filter(POC==1) %>% filter(year ==2020) %>% mutate(sqrt_PM2.5_concentration = sqrt(PM2.5_concentration))
+PM2.5_NYC_2020$pred <- predict(PM2.5_lm_mdl, PM2.5_NYC_2020)
+lm_rmse_2020 <-mean(((PM2.5_NYC_2020$pred)^2-PM2.5_NYC_2020$PM2.5_concentration)^2) %>% sqrt()
+
+
+plot(PM2.5_lm_mdl)
 
 PM2.5_NYC_lm_test <- PM2.5_NYC_lm[-train,"PM2.5_concentration"]#testing set for data validation
 PM2.5_NYC_lm_test$lm_yhat <- predict(PM2.5_lm_mdl, newdata = PM2.5_NYC_lm[-train,])
 PM2.5_NYC_lm_test %>% ggplot(aes(x=lm_yhat, y=PM2.5_concentration))+
   geom_point()+geom_abline()
-lm_test_rmse <- sqrt(mean((PM2.5_NYC_lm_test$lm_yhat-PM2.5_NYC_lm_test$PM2.5_concentration)^2))
+lm_test_rmse <- sqrt(mean((predict(PM2.5_lm_mdl, newdata = PM2.5_NYC_lm[-train,])-PM2.5_NYC_lm_test$PM2.5_concentration)^2))
 ## step 5, using historical data to inference on 2020 and compare with actual data
 
 ## step 6, conclude and suggestion for further analysis.
