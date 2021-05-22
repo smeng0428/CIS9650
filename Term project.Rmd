@@ -2,12 +2,15 @@
 title: "STA9750TermProject"
 author: "Shawn Meng, Rongnan He, Szufan Chen, Jiarui Guo"
 date: "`r format(Sys.time(), '%B %d %Y')`"
-output: 
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
   html_document:
-    toc: true
+    toc: yes
     toc_float:
-      collapsed: false
-      smooth_scroll: true
+      collapsed: no
+      smooth_scroll: yes
     toc_depth: 3
 ---
 
@@ -20,20 +23,21 @@ library(broom)
 library(randomForest)
 ```
 ## Background
+Air pollution is a leading environmental threat to the health of urban populations overall and specifically to New York City residents. Clean air laws and regulations have improved the air quality in New York and most other large cities, but several pollutants presented in the air are at levels that are harmful. In 2020, The emergence of a severe COVID-19 pandemic has posed a severe threat to human health and adversely affected all aspects of life, resulting in the implementation of lockdown in activities. While recession or economic slowdown will adversely affect countries’ ongoing efforts towards climate mitigation,  a significant improvement has been observed in air quality.
 
-In this project, we are going to analyze the impact of the NY COVID-19 shutdown to the levels of air pollutants. Around the world, there are reports showed that the shutdown improved the air quality for some regions.
-The EPA(United States environmental protection agency) is tracking five common pollutants nationwide. In this project, we will focus on PM2.5 and nitrogen oxide which are closely related to the traffic. Our data was access from [EPA website](https://www.epa.gov/outdoor-air-quality-data/download-daily-data). 
-We will limit our analysis on PM2.5 and NO2 because these two pollutants are closely related to the traffic.
+In this project, we aim to highlight the air pollution in New York City between 2010 to 2020. Our data is obtained from Wikipedia. It focuses on common air pollutants—fine particulate matter (PM2.5). Around the world, there are reports showed that the shutdown may or may not improved the air quality around the world.[1]
+The EPA(United States environmental protection agency) is tracking five common pollutants nationwide. In this project, we will focus on PM2.5 which are closely related to the traffic. It is  Our data was access from [EPA website](https://www.epa.gov/outdoor-air-quality-data/download-daily-data). 
+We will focus our analysis on PM2.5 because PM2.5 has a strong implication on human health.[2]
 
 ## Objective
-1. We want to see if there is a significant impact of the NY PAUSE executive order from governor Cuomo on the air pollutant levels of PM2.5 and NO2 in NYC.
+1. We want to see if there is a significant impact of the NY PAUSE executive order from the governor Cuomo on the air pollutant levels of PM2.5 in NYC.
 2. We are also interested in the long term trend and seasonality influence of the air pollutants in NYC.
 
 ## Exploratory data analysis
 
 ### Introduction to the dataset
-We obtained the data of PM2.5 and NO2 from 2004 to 2020.
-```{r dataimport, echo=FALSE, include=FALSE}
+We obtained the data of PM2.5 from 2004 to 2020 from [EPA website](https://www.epa.gov/outdoor-air-quality-data/download-daily-data).
+```{r dataimport, echo=FALSE, include=FALSE, results='hide'}
 read_data <- function(pollutant, state="NY", year = 2004:2020) {
   datamerge <- data.frame()
   for (i in year){
@@ -44,62 +48,234 @@ read_data <- function(pollutant, state="NY", year = 2004:2020) {
 }
 
 PM2.5_NY_2004to2020 <- read_data(pollutant="PM25")
-#193975 obs of 20 variables
-NO2_NY_2004to2020 <- read_data(pollutant="NO2")
-#42814 obs of 20 variables
 ```
+This dataset contains `r nrow(PM2.5_NY_2004to2020)` observations and  `r ncol(PM2.5_NY_2004to2020)` variables.
 
-```{r data cleaning, echo=FALSE}
+
+
+```{r data cleaning, echo=FALSE, include=FALSE}
 ##step 2, cleaning and manipulating data
 #checking for missing values
 PM2.5_NY_2004to2020 %>% select(`Daily Mean PM2.5 Concentration`) %>%
   filter(is.na(`Daily Mean PM2.5 Concentration`))
-#no missing value for Daily mean PM2.5
-NO2_NY_2004to2020 %>% select(`Daily Max 1-hour NO2 Concentration`) %>%
-  filter(is.na(`Daily Max 1-hour NO2 Concentration`))
-#no mission value for Daily Max No2
-#somehow there are daily mean pm2.5 readings which are negative, these reading probably caused by faulty sensors. 
-#we will exclude from the dataset
+
+
 PM2.5_NY_2004to2020_cleaned <- PM2.5_NY_2004to2020 %>% filter(`Daily Mean PM2.5 Concentration`>=0)
 #check for the percentage of the cleaned data to the total data
 paste0(format(nrow(PM2.5_NY_2004to2020_cleaned)/nrow(PM2.5_NY_2004to2020)*100,trim=TRUE, digits = 5),"%")
 #99.717% of the total data which I think it is reasonable.
 
-#similarly, clean the data for NO2
-NO2_NY_2004to2020_cleaned <- NO2_NY_2004to2020 %>%  filter(`Daily Max 1-hour NO2 Concentration`>0)
-paste0(format(nrow(NO2_NY_2004to2020_cleaned)/nrow(NO2_NY_2004to2020)*100, trim = TRUE, digits = 5), "%")
-#99.615% of total data
 
 #transform the date to the format of datetime 
 PM2.5_NY_2004to2020_cleaned <- PM2.5_NY_2004to2020_cleaned %>% 
-  mutate(Date = mdy(Date)) %>% mutate(month=month(Date))
-NO2_NY_2004to2020_cleaned <- NO2_NY_2004to2020_cleaned %>% 
-  mutate(Date = mdy(Date)) %>% mutate(month=month(Date))
-# check how many counties involved in this dataset
-unique(PM2.5_NY_2004to2020_cleaned$COUNTY)
-unique(NO2_NY_2004to2020_cleaned$COUNTY)
+  mutate(Date = mdy(Date)) %>% mutate(month=month(Date, label = TRUE)) %>% 
+  rename(PM2.5_concentration = `Daily Mean PM2.5 Concentration`,site_ID=`Site ID`)
 # create NYC counties
 NYC_counties <- c("Kings", "Bronx", "Queens", "New York", "Richmond")
-#creat the date that NY Pause order go into effect
+#create the date that NY Pause order go into effect
 NY_pause <- mdy_h("March 22 2020 8PM", tz="EST")
 
 ```
-### first look of the NY PAUSE executive order impact
+Somehow there are daily mean pm2.5 readings which are negative, these reading probably caused by faulty sensors. we will exclude these negative values. The percentage of data left is `r paste0(format(nrow(PM2.5_NY_2004to2020_cleaned)/nrow(PM2.5_NY_2004to2020)*100,trim=TRUE, digits = 5),"%") `, which is reasonable. 
+Also, this dataset contains all data for New York state. Since we are focusing our study in NYC, we will select the data only in NYC.
+```{r glimpse of data, echo=FALSE, warning=FALSE}
+glimpse(PM2.5_NY_2004to2020)
+```
 
+### First look of the NY PAUSE executive order impact
 
+First, we want to look at how the NY pause executive order affects the PM2.5 level in 2020 in NYC
 ```{r NYC2020, echo=FALSE}
-##step 3, exploratory data analysis
-#first look at how the shutdown affects the pollutant in 2020 in NYC
+
 #pm2.5 trend in 2020 in NYC
 
 PM2.5_NY_2020 <- PM2.5_NY_2004to2020_cleaned %>% filter(year(Date)==2020)
-PM2.5_NY_2020 %>%  select(Date, `Daily Mean PM2.5 Concentration`, COUNTY) %>%  
+PM2.5_NY_2020 %>%  select(Date, PM2.5_concentration, COUNTY) %>%  
   filter(COUNTY %in% NYC_counties) %>% 
-  ggplot(aes(x = Date, y= `Daily Mean PM2.5 Concentration`, color = COUNTY))+geom_point(alpha=0.3)+
+  ggplot(aes(x = Date, y= PM2.5_concentration, color = COUNTY))+geom_point(alpha=0.3)+
   geom_vline(mapping = aes(xintercept = date(NY_pause))) +geom_smooth(se=FALSE)+
   geom_text(aes(x = date(NY_pause), y = 20, label = "NY PAUSE executive order"), size = 3, hjust=-0.05, color = "black")+
-  labs(title = "Daily PM 2.5 concetration in NYC in 2020", x = "", y="Daily Mean PM2.5 concentration (ug/m3 LC)")
+  labs(title = "Daily PM 2.5 concetration in NYC in 2020", x = "", y="Daily Mean PM2.5 concentration (ug/m3 LC)", caption = "graph 1.1")
+```
+From this graph we can see that the PM2.5 level went down after the NY PAUSE executive order. Later during the summer, the PM2.5 went up agian and drops back after around September. However, the PM2.5 level already starts to went down before the executive order. Could this phenomenon caused by the economy already slowed before the executive order or it is just seasonal change?
+
+### Seasonality changes of of PM2.5 concentration in NYC
+```{r NYC seasonal changes, echo=FALSE, warning=FALSE}
+# seasonal change? long term trend?
+PM2.5_NYC <- PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration, COUNTY, site_ID, month, POC) %>%  
+  filter(COUNTY %in% NYC_counties, POC==1) %>% 
+  mutate(year=year(Date),weekday=weekdays(Date),weekend=if_else(weekday %in% c("Saturday","Sunday"), TRUE, FALSE))
+
+PM2.5_NYC %>% ggplot(aes(x= month, y= PM2.5_concentration))+
+  geom_boxplot()+facet_wrap(~year, scale ="fixed", shrink = TRUE, ncol = 4)+
+  labs(title = "Seasonality change of Daily PM2.5 concentration in NYC", x= "month", y= "Daily Mean PM2.5 Concentration (ug/m3 LC)", caption = "graph 1.2")
 
 ```
+From this graph, we will exam if there is any seasonality change for the PM2.5 level in New York City. We looked back the data from 2004 to 2020 on an annual basis. The level of PM2.5 tends to rise in the winter and summer months and fall in the spring and fall months. It confirms there is a seasonality change of PM2.5 levels in New York City. Furthermore, we can see the PM2.5 levels getting lower and lower over time. Next, we will take a deeper look at the long term trend for the PM2.5 levels in New York City.
+This result is also inline with other researchers' conclusion that PM2.5 has a strong seasonal pattern in the United States.[3]
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+### Long term trends of PM2.5 concentration in NYC
+```{r NYC long term, echo=FALSE, warning=FALSE}
+PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration, COUNTY) %>%  
+  filter(COUNTY %in% NYC_counties) %>% 
+  ggplot(aes(x = Date, y= PM2.5_concentration, color = COUNTY))+geom_point(alpha=0.03)+
+  geom_vline(mapping = aes(xintercept = date(NY_pause))) +geom_smooth(se=FALSE, size =0.8)+
+  geom_text(aes(x = date(NY_pause), y = 40, label = "NY PAUSE executive order"), size = 3, hjust=1, color="black")+
+  labs(title = "long term trend of Daily PM 2.5 concetration in NYC on monthly basis", x = "", y="Daily Mean PM2.5 concentration (ug/m3 LC)", caption = "graph 1.3")
+```
+This scatter plot shows us the long term trend of PM2.5 levels in New York City has a clear downward trend. Also, the days of extremely high level of PM2.5 is also significantly less in recent years. That is good news for New York City. However, we can not see a significant impact of the NY pause executive order on the level of PM2.5. We will further analysis these hypothesis through modeling.
+```{r trend table, echo=FALSE, warning=FALSE}
+PM2.5_trend_table <- PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration, COUNTY) %>%  
+  filter(COUNTY %in% NYC_counties) %>% 
+  group_by(year(Date)) %>%  
+  summarise(PM2.5_mean =mean(PM2.5_concentration), sd=sd(PM2.5_concentration), 
+            `IQR(min-max)` = paste0(IQR(PM2.5_concentration), "(",min(PM2.5_concentration),"-", max(PM2.5_concentration),")")) %>% 
+  rename (Year = `year(Date)`) %>% 
+  mutate(PM2.5_mean_SD = paste(format(PM2.5_mean,digits = 3), format(sd, digits = 3), sep = "±")) %>% 
+  select(Year, PM2.5_mean_SD, `IQR(min-max)`)
+print(PM2.5_trend_table)
+```
+
+From this summary table we can conclude that the PM2.5 concentration in NYC generally have a downward trend from 2004 to 2020. Not only the average level of PM2.5 went down, but also the extreme high level of PM2.5 went down in recent years.
+However the PM2.5 data is quite noisy as the standard deviation is large.
+
+## Modeling
+
+### Random Forest Model
+```{r NYC random forest model, echo=FALSE, warning=FALSE}
+set.seed(9750)
+
+## we will only use POC ==1 for simplicity
+##POC Parameter Occurrence Code - A numeric sequence number used to distinguish between different monitors at one site that are measuring the same pollutant.
+#https://aqs.epa.gov/aqsweb/helpfiles/poc.htm
+PM2.5_NYC_rf <- PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration, COUNTY, site_ID, POC) %>%  
+  filter(COUNTY %in% NYC_counties) %>% 
+  mutate(COUNTY=as.factor(COUNTY),year=as.factor(year(Date)),month=as.factor(month(Date)),day=as.factor(day(Date)), weekday=weekdays(Date),weekend=if_else(weekday %in% c("Saturday","Sunday"), TRUE, FALSE)) %>% 
+  filter(POC==1)
+#subset for 70% training and 30% testing data
+train = sample(1:nrow(PM2.5_NYC_rf), nrow(PM2.5_NYC_rf)*.7)
+
+PM2.5_rf_mdl2 <- randomForest(PM2.5_concentration~Date+COUNTY+site_ID+year+month+weekday+weekend, data = PM2.5_NYC_rf, subset = train, importance =TRUE, ntree=500)
+
+PM2.5_NYC_rf$pred <- predict(PM2.5_rf_mdl2, PM2.5_NYC_rf)
+
+rf_train_rmse2 <- sqrt(mean((predict(PM2.5_rf_mdl2, PM2.5_NYC_rf)-PM2.5_NYC_rf$PM2.5_concentration)^2))
+
+
+PM2.5_NYC_rf_test2 <- PM2.5_NYC_rf[-train,"PM2.5_concentration"]#testing set for data validation
+PM2.5_NYC_rf_test2$rf_yhat <- predict(PM2.5_rf_mdl2, newdata = PM2.5_NYC_rf[-train,])
+
+rf_test_rmse2 <- sqrt(mean((PM2.5_NYC_rf_test2$rf_yhat-PM2.5_NYC_rf_test2$PM2.5_concentration)^2))
+
+PM2.5_rf_mdl2
+```
+
+
+First, we set seed for reproducible result. 
+The data was randomly split into 70% training set and 30% testing set.
+The training set was used to fit the random forest model. The testing set was used to validate the model
+The random forest model is used in this part of analysis. The explanatory variables are date, the county, collecting site, year, month, weekday and weekend. The dependent variable is the level of PM2.5.
+The RMSE of the training set is `r format(rf_train_rmse2, digits =4)`
+The RMSE of the testing set is `r format(rf_test_rmse2,digits =4)`.
+
+```{r random foreset evaluation, echo=FALSE, warning=FALSE}
+importance(PM2.5_rf_mdl2)
+varImpPlot(PM2.5_rf_mdl2)
+PM2.5_NYC_rf_test2 %>% ggplot(aes(x=rf_yhat, y=PM2.5_concentration))+
+  geom_point()+geom_abline()+
+  labs(title = "Observed PM2.5 concentration VS predicted PM2.5 concentration by Random forest model", x = "predicted PM2.5 concentration", y = "Observed PM2.5 concentration")
+```
+From the importance plot we can see that the variables associate with time overshadow the variables associate with geographical location. I think it is reasonable as our study was focused in New York city. The monitoring station are relatively close. The date when the data was collected is the most important predictor for the PM 2.5 concentration according to our random forest model. 
+
+### Linear Regression Model
+```{r NYC linear regression model, echo=FALSE, warning=FALSE}
+set.seed(9750)
+PM2.5_NYC_lm <- PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration, COUNTY, site_ID, POC) %>%  
+  filter(COUNTY %in% NYC_counties) %>% 
+  mutate(COUNTY=as.factor(COUNTY),year=year(Date),month=as.factor(month(Date))) %>% 
+  filter(POC==1) %>% filter(year>=2013 & year <2020) %>% mutate(sqrt_PM2.5_concentration = sqrt(PM2.5_concentration))
+PM2.5_lm_mdl <- lm(sqrt_PM2.5_concentration~Date+I(month)+year+I(COUNTY), data = PM2.5_NYC_lm)
+
+PM2.5_NYC_lm$pred <-predict(PM2.5_lm_mdl, PM2.5_NYC_lm)
+lm_train_rmse <- sqrt(mean(((PM2.5_NYC_lm$pred)^2-PM2.5_NYC_lm$PM2.5_concentration)^2))
+
+
+PM2.5_NYC_2020 <- PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentration, COUNTY, site_ID, POC) %>%  
+  filter(COUNTY %in% NYC_counties) %>% 
+  mutate(COUNTY=as.factor(COUNTY),year=year(Date),month=as.factor(month(Date))) %>% 
+  filter(POC==1) %>% filter(year ==2020) %>% mutate(sqrt_PM2.5_concentration = sqrt(PM2.5_concentration))
+PM2.5_NYC_2020$pred <- predict(PM2.5_lm_mdl, PM2.5_NYC_2020)
+
+lm_rmse_2020 <-mean(((PM2.5_NYC_2020$pred)^2-PM2.5_NYC_2020$PM2.5_concentration)^2) %>% sqrt()
+
+
+tidy(PM2.5_lm_mdl)
+```
+
+As we observed from graph 1.3, the PM2.5 concentration and time seems to have a linear association from 2013-2020. 
+Thus we tried to fit a linear regression model using the square root of PM2.5 concentration as dependent variable. We tried to using the date, month, year and the county where the data was taken.
+```{r linear model evaluation, echo=FALSE, warning=FALSE}
+par(mfrow=c(2,2))
+plot(PM2.5_lm_mdl)
+ggplot(PM2.5_NYC_2020, aes(x= pred^2, y = PM2.5_concentration))+
+  geom_point()+geom_abline()+
+  labs(title = "Observed PM2.5 concentration VS predicted PM2.5 concentration by Linear Regression Model", x= " predicted PM2.5 Concentration", y = "observed PM2.5 concentration")
+```
+We take the squared root of PM2.5 concentration because the data is skewed, the linear model fit better when take the square root to mitigate the impact of extreme values.
+We confirm these by looking at the Q-Q plot as the residues are almost normally distributed.
+Next we used the linear regression model build upon data from 2013 to 2019 to predict the PM2.5 concentration in 2020. 
+Then we compare the predicted value to the observed value to calculate RMSE, which is `r format(lm_rmse_2020, digits =4)`.
+From our model, the NY pause executive order does not have a significant impact on the level of PM2.5 concentration.
+
+```{r linear regression summary, echo=FALSE, warning=FALSE}
+summary(PM2.5_lm_mdl)
+```
+This model does not show us a strong correlation as we can see from linear regression summary as the adjusted R is only 0.1231.
+As some other researchers suggests, weather and other meteorological variations contribute to the variability of the PM2.5 concentration too.For example, the northeast wind in the winter are strongly associated with low PM2.5 level[4]
+Furthermore, PM 2.5 has multiple sources and they tends to vary depend on the season. [5] 
+
+
+## Conclusion and further analysis
+The outbreak of the COVID-19 pandemic has adversely affected all aspects of life and poses a severe threat to human health and economic development. New York City administration enacted a strict isolation decision at the end of March 2020 to tackle the COVID-19, creating a unique opportunity to assess air quality. Therefore, we investigated the impact of the lockdown on air quality in New York City. We evaluated the air pollutants concentration-PM2.5, during the lockdown and compared them with pre-COVID-19. 
+According to our analysis, the COVID-19 related lockdown does not significantly impact the PM2.5 level in New York city. However, we discover the PM2.5 level in New York city went down gradually over the past 17 years. 
+For future investigation, it may be a good idea to include meteorological data and digs further on the source of PM2.5 in order to achieve a better model.
+
+## Reference
+[1]Daniella Rodríguez-Urrego, Leonardo Rodríguez-Urrego,
+Air quality during the COVID-19: PM2.5 analysis in the 50 most polluted capital cities in the world,
+Environmental Pollution,
+Volume 266, Part 1,
+2020,
+115042,
+ISSN 0269-7491
+
+2]Shaolong Feng, Dan Gao, Fen Liao, Furong Zhou, Xinming Wang,
+The health effects of ambient PM2.5 and potential mechanisms,
+Ecotoxicology and Environmental Safety,
+Volume 128,
+2016,
+Pages 67-74,
+ISSN 0147-6513,
+https://doi.org/10.1016/j.ecoenv.2016.01.030.
+
+[3]Michelle L. Bell, Francesca Dominici, Keita Ebisu, Scott L. Zeger, and Jonathan M. Samet,
+Spatial and Temporal Variation in PM2.5 Chemical Composition in the United States for Health Effects Studies,
+Environmental Health Perspectives
+Vol. 115, No.7
+2007
+
+[4]Arthur T. DeGaetano, Owen M. Doherty,
+Temporal, spatial and meteorological variations in hourly PM2.5 concentration extremes in New York City,
+Atmospheric Environment,
+Volume 38, Issue 11,
+2004,
+Pages 1547-1558,
+ISSN 1352-2310
+
+[5]Kazuhiko Ito, Nan Xue, George Thurston,
+Spatial variation of PM2.5 chemical species and source-apportioned mass concentrations in New York City,
+Atmospheric Environment,
+Volume 38, Issue 31,
+2004,
+Pages 5269-5282,
+ISSN 1352-2310
