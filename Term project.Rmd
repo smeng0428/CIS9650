@@ -21,6 +21,7 @@ library(lubridate)
 library(modelr)
 library(broom)
 library(randomForest)
+library(knitr)
 ```
 ## Background
 Air pollution is a leading environmental threat to the health of urban populations overall and specifically to New York City residents. Clean air laws and regulations have improved the air quality in New York and most other large cities, but several pollutants presented in the air are at levels that are harmful. In 2020, The emergence of a severe COVID-19 pandemic has posed a severe threat to human health and adversely affected all aspects of life, resulting in the implementation of lockdown in activities. While recession or economic slowdown will adversely affect countries’ ongoing efforts towards climate mitigation,  a significant improvement has been observed in air quality.
@@ -133,7 +134,7 @@ PM2.5_trend_table <- PM2.5_NY_2004to2020_cleaned %>% select(Date, PM2.5_concentr
   rename (Year = `year(Date)`) %>% 
   mutate(PM2.5_mean_SD = paste(format(PM2.5_mean,digits = 3), format(sd, digits = 3), sep = "±")) %>% 
   select(Year, PM2.5_mean_SD, `IQR(min-max)`)
-print(PM2.5_trend_table)
+kable(PM2.5_trend_table, caption = "PM2.5 statistical trend in NYC")
 ```
 
 From this summary table we can conclude that the PM2.5 concentration in NYC generally have a downward trend from 2004 to 2020. Not only the average level of PM2.5 went down, but also the extreme high level of PM2.5 went down in recent years.
@@ -179,7 +180,7 @@ The RMSE of the training set is `r format(rf_train_rmse2, digits =4)`
 The RMSE of the testing set is `r format(rf_test_rmse2,digits =4)`.
 
 ```{r random foreset evaluation, echo=FALSE, warning=FALSE}
-importance(PM2.5_rf_mdl2)
+kable(importance(PM2.5_rf_mdl2), caption = " importance of variables in Random Forest Model")
 varImpPlot(PM2.5_rf_mdl2)
 PM2.5_NYC_rf_test2 %>% ggplot(aes(x=rf_yhat, y=PM2.5_concentration))+
   geom_point()+geom_abline()+
@@ -209,7 +210,7 @@ PM2.5_NYC_2020$pred <- predict(PM2.5_lm_mdl, PM2.5_NYC_2020)
 lm_rmse_2020 <-mean(((PM2.5_NYC_2020$pred)^2-PM2.5_NYC_2020$PM2.5_concentration)^2) %>% sqrt()
 
 
-tidy(PM2.5_lm_mdl)
+kable(tidy(PM2.5_lm_mdl), caption ="The linear regression model")
 ```
 
 As we observed from graph 1.3, the PM2.5 concentration and time seems to have a linear association from 2013-2020. 
@@ -221,7 +222,7 @@ ggplot(PM2.5_NYC_2020, aes(x= pred^2, y = PM2.5_concentration))+
   geom_point()+geom_abline()+
   labs(title = "Observed PM2.5 concentration VS predicted PM2.5 concentration by Linear Regression Model", x= " predicted PM2.5 Concentration", y = "observed PM2.5 concentration")
 ```
-We take the squared root of PM2.5 concentration because the data is skewed, the linear model fit better when take the square root to mitigate the impact of extreme values.
+We take the squared root of PM2.5 concentration because the data is skewed, the linear model fit better when take the square root of the PM 2.5 concentration to mitigate the impact of extreme values.
 We confirm these by looking at the Q-Q plot as the residues are almost normally distributed.
 Next we used the linear regression model build upon data from 2013 to 2019 to predict the PM2.5 concentration in 2020. 
 Then we compare the predicted value to the observed value to calculate RMSE, which is `r format(lm_rmse_2020, digits =4)`.
